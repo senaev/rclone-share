@@ -9,6 +9,7 @@ final class ShareViewController: NSViewController {
     private static let lastDestinationKey = "lastDestinationID"
 
     private let summaryLabel = NSTextField(wrappingLabelWithString: "Reading the selection…")
+    private let statusLabel = NSTextField(wrappingLabelWithString: "")
     private let destinationPicker = NSPopUpButton(frame: .zero, pullsDown: false)
     private let uploadButton = NSButton(title: "Upload", target: nil, action: nil)
 
@@ -17,28 +18,33 @@ final class ShareViewController: NSViewController {
     // MARK: - Layout
 
     override func loadView() {
-        let root = NSView(frame: NSRect(x: 0, y: 0, width: 460, height: 200))
+        let root = NSView(frame: NSRect(x: 0, y: 0, width: 460, height: 240))
 
         let title = NSTextField(labelWithString: "Upload to rclone")
         title.font = .boldSystemFont(ofSize: 15)
-        title.frame = NSRect(x: 20, y: 160, width: 300, height: 22)
+        title.frame = NSRect(x: 20, y: 200, width: 300, height: 22)
         root.addSubview(title)
 
         summaryLabel.font = .systemFont(ofSize: 11)
         summaryLabel.textColor = .secondaryLabelColor
-        summaryLabel.frame = NSRect(x: 20, y: 112, width: 420, height: 40)
+        summaryLabel.frame = NSRect(x: 20, y: 152, width: 420, height: 40)
         root.addSubview(summaryLabel)
 
         let destinationTitle = NSTextField(labelWithString: "Destination")
-        destinationTitle.frame = NSRect(x: 20, y: 74, width: 90, height: 20)
+        destinationTitle.frame = NSRect(x: 20, y: 114, width: 90, height: 20)
         root.addSubview(destinationTitle)
 
-        destinationPicker.frame = NSRect(x: 112, y: 70, width: 328, height: 26)
+        destinationPicker.frame = NSRect(x: 112, y: 110, width: 328, height: 26)
         for destination in Destination.all {
             destinationPicker.addItem(withTitle: destination.displayName)
         }
         restoreLastDestination()
         root.addSubview(destinationPicker)
+
+        statusLabel.font = .systemFont(ofSize: 11)
+        statusLabel.textColor = .systemRed
+        statusLabel.frame = NSRect(x: 20, y: 58, width: 420, height: 44)
+        root.addSubview(statusLabel)
 
         let cancelButton = NSButton(title: "Cancel", target: self, action: #selector(cancel))
         cancelButton.frame = NSRect(x: 250, y: 20, width: 90, height: 30)
@@ -58,13 +64,18 @@ final class ShareViewController: NSViewController {
     override func viewDidLoad() {
         super.viewDidLoad()
 
+        Log.shareExtension.info("Share Extension opened")
+
         resolveAttachments { [weak self] urls, error in
             guard let self else { return }
             if let error {
-                self.summaryLabel.stringValue = error
+                Log.shareExtension.error("Could not resolve attachments: \(error, privacy: .public)")
+                self.summaryLabel.stringValue = "—"
+                self.statusLabel.stringValue = error
                 self.uploadButton.isEnabled = false
                 return
             }
+            Log.shareExtension.info("Resolved \(urls.count) item(s)")
             self.payload = urls
             self.summaryLabel.stringValue = Self.summary(of: urls)
             self.uploadButton.isEnabled = !urls.isEmpty
@@ -90,21 +101,60 @@ final class ShareViewController: NSViewController {
         do {
             let url = try job.makeOpenURL()
             uploadButton.isEnabled = false
-            summaryLabel.stringValue = "Handing over to RcloneShare…"
+            statusLabel.textColor = .secondaryLabelColor
+            statusLabel.stringValue = "Handing over to RcloneShare…"
+            handOff(url)
+        } catch {
+            Log.shareExtension.error("Could not write the job: \(error.localizedDescription, privacy: .public)")
+            show(error.localizedDescription)
+        }
+    }
 
-            // The main app performs the upload and copies the link.
-            extensionContext?.open(url) { [weak self] opened in
+    /// Launches the main app, which does the upload.
+    ///
+    /// `NSExtensionContext.open` reports failure for share extensions on macOS,
+    /// so LaunchServices is asked directly. It also returns a real error, which
+    /// is worth logging.
+    private func handOff(_ url: URL) {
+        let configuration = NSWorkspace.OpenConfiguration()
+        configuration.activates = false
+
+        NSWorkspace.shared.open(url, configuration: configuration) { [weak self] _, error in
+            DispatchQueue.main.async {
+                guard let self else { return }
+
+                if let error {
+                    Log.shareExtension.error(
+                        "NSWorkspace.open failed: \(error.localizedDescription, privacy: .public)"
+                    )
+                    self.fallBack(to: url, after: error)
+                    return
+                }
+
+                Log.shareExtension.info("Handed off to the app")
+                self.extensionContext?.completeRequest(returningItems: nil)
+            }
+        }
+    }
+
+    private func fallBack(to url: URL, after error: Error) {
+        extensionContext?.open(url) { [weak self] opened in
+            DispatchQueue.main.async {
                 guard let self else { return }
                 if opened {
+                    Log.shareExtension.info("Handed off through the extension context")
                     self.extensionContext?.completeRequest(returningItems: nil)
                 } else {
-                    self.summaryLabel.stringValue = "Could not start RcloneShare."
-                    self.uploadButton.isEnabled = true
+                    self.show("Could not start RcloneShare.\n\(error.localizedDescription)")
                 }
             }
-        } catch {
-            summaryLabel.stringValue = error.localizedDescription
         }
+    }
+
+    private func show(_ message: String) {
+        statusLabel.textColor = .systemRed
+        statusLabel.stringValue = message
+        uploadButton.isEnabled = !payload.isEmpty
     }
 
     // MARK: - Attachments
