@@ -1,0 +1,49 @@
+name: RcloneShare
+
+options:
+  bundleIdPrefix: com.senaev
+  deploymentTarget:
+    macOS: "14.0"
+  createIntermediateGroups: true
+
+settings:
+  base:
+    SWIFT_VERSION: "5.0"
+    MARKETING_VERSION: "0.0.1"
+    CURRENT_PROJECT_VERSION: "1"
+    # Ad-hoc signing: no Apple Developer certificate needed.
+    CODE_SIGN_IDENTITY: "-"
+    CODE_SIGN_STYLE: Manual
+    CODE_SIGNING_REQUIRED: "YES"
+    CODE_SIGNING_ALLOWED: "YES"
+    DEVELOPMENT_TEAM: ""
+    ENABLE_HARDENED_RUNTIME: "NO"
+    ALWAYS_SEARCH_USER_PATHS: "NO"
+
+targets:
+  RcloneShare:
+    type: application
+    platform: macOS
+    sources:
+      - Sources/App
+    settings:
+      base:
+        PRODUCT_NAME: RcloneShare
+        PRODUCT_BUNDLE_IDENTIFIER: com.senaev.rclone-share
+        INFOPLIST_FILE: Sources/App/Info.plist
+    dependencies:
+      - target: ShareExtension
+        embed: true
+        codeSign: true
+
+  ShareExtension:
+    type: app-extension
+    platform: macOS
+    sources:
+      - Sources/ShareExtension
+    settings:
+      base:
+        PRODUCT_NAME: ShareExtension
+        PRODUCT_BUNDLE_IDENTIFIER: com.senaev.rclone-share.shareext
+        INFOPLIST_FILE: Sources/ShareExtension/Info.plist
+        CODE_SIGN_ENTITLEMENTS: Sources/ShareExtension/ShareExtension.entitlements
