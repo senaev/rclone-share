@@ -225,20 +225,96 @@ final class ShareViewController: NSViewController {
         }
 
         // Anything else, for example an image straight from the screenshot
-        // thumbnail, is materialised through a file representation.
-        guard let type = provider.registeredTypeIdentifiers.first else {
+        // thumbnail. Ask for a concrete data type on purpose: the first
+        // registered identifier can be a class based representation such as
+        // NSImage, and loading that yields an NSKeyedArchiver plist rather than
+        // image bytes.
+        Log.shareExtension.info(
+            "Types offered: \(provider.registeredTypeIdentifiers.joined(separator: ", "), privacy: .public)"
+        )
+
+        guard let type = Self.preferredDataType(of: provider) else {
+            Log.shareExtension.error("No data type available")
             completion(nil)
             return
         }
-        provider.loadFileRepresentation(forTypeIdentifier: type) { url, _ in
-            guard let url, let data = try? Data(contentsOf: url) else {
+
+        provider.loadDataRepresentation(forTypeIdentifier: type.identifier) { data, error in
+            guard let data else {
+                Log.shareExtension.error(
+                    "loadDataRepresentation failed: \(error?.localizedDescription ?? "no data", privacy: .public)"
+                )
                 completion(nil)
                 return
             }
-            // The handed URL is deleted when this handler returns, so copy it.
-            let name = provider.suggestedName ?? url.lastPathComponent
-            completion(Self.stage(data, name: name))
+
+            let payload = Self.normalise(data, type: type)
+            let name = Self.filename(suggested: provider.suggestedName, type: payload.type)
+            Log.shareExtension.info(
+                "Staged \(payload.data.count) bytes as \(name, privacy: .public)"
+            )
+            completion(Self.stage(payload.data, name: name))
         }
+    }
+
+    /// Chooses a type that really carries bytes, preferring common image
+    /// formats so a screenshot keeps its original encoding.
+    private static func preferredDataType(of provider: NSItemProvider) -> UTType? {
+        let offered = provider.registeredTypeIdentifiers
+
+        for candidate in [UTType.png, .jpeg, .heic, .tiff, .pdf, .gif]
+        where offered.contains(candidate.identifier) {
+            return candidate
+        }
+
+        // Otherwise the first declared type that is a byte stream. This skips
+        // class based pasteboard types, which cannot be written as a file.
+        for identifier in offered {
+            if let type = UTType(identifier), type.isDeclared, type.conforms(to: .data) {
+                return type
+            }
+        }
+        return nil
+    }
+
+    /// Safety net. If the payload is still a keyed archive, unwrap the image
+    /// and re-encode it as PNG so the result is a usable file.
+    private static func normalise(_ data: Data, type: UTType) -> (data: Data, type: UTType) {
+        guard data.starts(with: Array("bplist00".utf8)) else {
+            return (data, type)
+        }
+
+        Log.shareExtension.warning("Payload is a keyed archive, re-encoding as PNG")
+
+        if let image = try? NSKeyedUnarchiver.unarchivedObject(ofClass: NSImage.self, from: data),
+           let tiff = image.tiffRepresentation,
+           let bitmap = NSBitmapImageRep(data: tiff),
+           let png = bitmap.representation(using: .png, properties: [:]) {
+            return (png, .png)
+        }
+
+        Log.shareExtension.error("Could not decode the keyed archive")
+        return (data, type)
+    }
+
+    /// Makes sure the name carries the extension that matches the real type,
+    /// otherwise neither Finder nor a web interface recognises the file.
+    private static func filename(suggested: String?, type: UTType) -> String {
+        let fallbackExtension = type.preferredFilenameExtension ?? "dat"
+
+        var base = suggested?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        if base.isEmpty {
+            base = "shared-\(stamp())"
+        }
+
+        let current = (base as NSString).pathExtension
+        if current.lowercased() == fallbackExtension.lowercased() {
+            return base
+        }
+        if !current.isEmpty {
+            base = (base as NSString).deletingPathExtension
+        }
+        return "\(base).\(fallbackExtension)"
     }
 
     /// Writes data into the extension container and returns its path.
