@@ -12,7 +12,37 @@ Planned entry points:
 ## Status
 
 Early. The Share Extension is proven to register and load with ad-hoc signing,
-so no Apple Developer certificate is required.
+so no Apple Developer certificate is required. The upload core works and is
+covered by the `rcshare` CLI. The GUI is not built yet.
+
+## Destinations
+
+Hardcoded for now, in `Sources/Core/Destination.swift`. Each remote needs its
+own landing folder and its own rule for turning an upload into a public link.
+
+| Destination | Remote | Landing folder | Link rule |
+| --- | --- | --- | --- |
+| Yandex Disk | `yadisk` | `_other` | `rclone link` returns the URL |
+| Google Drive | `gdrive` | `Shared from Mac` | ID from `lsjson`, URL built by hand |
+
+Google Drive cannot use `rclone link` because public sharing is disabled at the
+workspace level. Links work only because `Shared from Mac` is already shared
+with `all@datadoghq.com` as Viewers. Note that `lsjson --stat` reports an `ID`
+for files but **not** for directories, so a folder ID is read from the parent
+listing with `lsjson --dirs-only`.
+
+Several selected items go into one timestamped subfolder, and the link points
+at that folder.
+
+## CLI
+
+```bash
+rcshare --list
+rcshare yadisk ~/Downloads/report.pdf
+rcshare gdrive ~/Pictures/screenshots            # a folder stays a folder
+rcshare gdrive a.txt b.txt                       # → one timestamped folder
+echo "hello" | rcshare yadisk --text note.md     # no local file needed
+```
 
 ## Requirements
 

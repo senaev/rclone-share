@@ -26,6 +26,7 @@ targets:
     platform: macOS
     sources:
       - Sources/App
+      - Sources/Core
     settings:
       base:
         PRODUCT_NAME: RcloneShare
@@ -41,9 +42,22 @@ targets:
     platform: macOS
     sources:
       - Sources/ShareExtension
+      - Sources/Core
     settings:
       base:
         PRODUCT_NAME: ShareExtension
         PRODUCT_BUNDLE_IDENTIFIER: com.senaev.rclone-share.shareext
         INFOPLIST_FILE: Sources/ShareExtension/Info.plist
         CODE_SIGN_ENTITLEMENTS: Sources/ShareExtension/ShareExtension.entitlements
+
+  # Test and scripting front end for Core. Not shipped inside the .app.
+  rcshare:
+    type: tool
+    platform: macOS
+    sources:
+      - Sources/CLI
+      - Sources/Core
+    settings:
+      base:
+        PRODUCT_NAME: rcshare
+        PRODUCT_BUNDLE_IDENTIFIER: com.senaev.rclone-share.cli
