@@ -75,12 +75,25 @@ does not appear in the Share menu, enable it in
 
 ## Architecture
 
-A Share Extension must be sandboxed, so it cannot run `rclone` itself. The
-extension therefore hands the payload to the main app, and the main app performs
-the upload.
-
 ```
 RcloneShare.app
-├─ Contents/MacOS/RcloneShare        menu bar app, hotkey, runs rclone
+├─ Contents/MacOS/RcloneShare              menu bar app — owns every rclone call
 └─ Contents/PlugIns/ShareExtension.appex   Share menu entry (sandboxed)
 ```
+
+macOS always sandboxes an app extension, so the `.appex` cannot run `rclone`.
+App groups, the usual way to share state, need a team ID that ad-hoc signing
+does not provide. The hand-off therefore uses a custom URL scheme, which needs
+no entitlement:
+
+1. The extension resolves the shared items to local paths. A file URL is used
+   as is. Anything held in memory, such as an image from the screenshot
+   thumbnail, is written into the extension container first.
+2. It writes a JSON job next to that payload and opens
+   `rclone-share://upload?job=<path>`.
+3. macOS launches the main app, which is not sandboxed. The app reads the job,
+   runs rclone, copies the link, and deletes the job file.
+
+Feedback uses `osascript` notifications and alerts, the same as the shell
+version. That avoids a notification permission prompt while the build is only
+ad-hoc signed.
