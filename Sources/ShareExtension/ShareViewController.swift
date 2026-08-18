@@ -69,7 +69,7 @@ final class ShareViewController: NSViewController {
         resolveAttachments { [weak self] urls, error in
             guard let self else { return }
             if let error {
-                Log.shareExtension.error("Could not resolve attachments: \(error, privacy: .public)")
+                Log.shareExtension.error("Could not resolve attachments: \(error)")
                 self.summaryLabel.stringValue = "—"
                 self.statusLabel.stringValue = error
                 self.uploadButton.isEnabled = false
@@ -105,7 +105,7 @@ final class ShareViewController: NSViewController {
             statusLabel.stringValue = "Handing over to RcloneShare…"
             handOff(url)
         } catch {
-            Log.shareExtension.error("Could not write the job: \(error.localizedDescription, privacy: .public)")
+            Log.shareExtension.error("Could not write the job: \(error.localizedDescription)")
             show(error.localizedDescription)
         }
     }
@@ -125,7 +125,7 @@ final class ShareViewController: NSViewController {
 
                 if let error {
                     Log.shareExtension.error(
-                        "NSWorkspace.open failed: \(error.localizedDescription, privacy: .public)"
+                        "NSWorkspace.open failed: \(error.localizedDescription)"
                     )
                     self.fallBack(to: url, after: error)
                     return
@@ -230,7 +230,7 @@ final class ShareViewController: NSViewController {
         // NSImage, and loading that yields an NSKeyedArchiver plist rather than
         // image bytes.
         Log.shareExtension.info(
-            "Types offered: \(provider.registeredTypeIdentifiers.joined(separator: ", "), privacy: .public)"
+            "Types offered: \(provider.registeredTypeIdentifiers.joined(separator: ", "))"
         )
 
         guard let type = Self.preferredDataType(of: provider) else {
@@ -242,7 +242,7 @@ final class ShareViewController: NSViewController {
         provider.loadDataRepresentation(forTypeIdentifier: type.identifier) { data, error in
             guard let data else {
                 Log.shareExtension.error(
-                    "loadDataRepresentation failed: \(error?.localizedDescription ?? "no data", privacy: .public)"
+                    "loadDataRepresentation failed: \(error?.localizedDescription ?? "no data")"
                 )
                 completion(nil)
                 return
@@ -251,7 +251,7 @@ final class ShareViewController: NSViewController {
             let payload = Self.normalise(data, type: type)
             let name = Self.filename(suggested: provider.suggestedName, type: payload.type)
             Log.shareExtension.info(
-                "Staged \(payload.data.count) bytes as \(name, privacy: .public)"
+                "Staged \(payload.data.count) bytes as \(name)"
             )
             completion(Self.stage(payload.data, name: name))
         }

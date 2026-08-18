@@ -3,17 +3,18 @@
 Share files from macOS to any [rclone](https://rclone.org) remote and get a shareable
 link in the clipboard.
 
-Planned entry points:
+Entry points:
 
 - **Share menu** — Finder right-click → Share, and the screenshot thumbnail Share button
-- **Global hotkey** — a small form to type a filename and content, like a gist
-- **Menu bar** — recent uploads and settings
+- **Global hotkey** — `⌘⇧'` opens a gist form: name, text, destination
+- **Menu bar** — upload a selection to any destination, or open the gist form
+- **CLI** — `rcshare`, handy for scripts and for testing
 
 ## Status
 
-Early. The Share Extension is proven to register and load with ad-hoc signing,
-so no Apple Developer certificate is required. The upload core works and is
-covered by the `rcshare` CLI. The GUI is not built yet.
+Working for everyday use. Ad-hoc signing is enough, so no Apple Developer
+certificate is required. Destinations are still hardcoded, and the menu bar has
+no settings or upload history yet.
 
 ## Destinations
 
@@ -33,6 +34,38 @@ listing with `lsjson --dirs-only`.
 
 Several selected items go into one timestamped subfolder, and the link points
 at that folder.
+
+## Gist form
+
+`⌘⇧'` anywhere opens a form for sharing typed or pasted text. The text goes
+straight to the remote through `rclone rcat`, so nothing is written to the local
+disk. `⌘↩` uploads, `Esc` closes. Plain `↩` inserts a newline, which is why the
+shortcut takes Command.
+
+The shortcut is registered through Carbon's `RegisterEventHotKey`. That needs no
+Accessibility permission, unlike a global `NSEvent` monitor. If another app
+already owns the combination, the app says so and the menu bar entry still
+works. The form can also be opened by a script:
+
+```bash
+open "rclone-share://gist"
+```
+
+## Gist form
+
+`⌘⇧'` anywhere opens a form for sharing typed or pasted text. The text goes
+straight to the remote through `rclone rcat`, so nothing is written to the local
+disk. `⌘↩` uploads, `Esc` closes. Plain `↩` inserts a newline, which is why the
+shortcut takes Command. If rclone fails, the form returns with the text intact.
+
+The shortcut uses Carbon's `RegisterEventHotKey`, which needs no Accessibility
+permission, unlike a global `NSEvent` monitor. When another app already owns the
+combination, the app says so and the menu bar entry still works. A script can
+open the same form:
+
+```bash
+open "rclone-share://gist"
+```
 
 ## CLI
 
@@ -94,6 +127,31 @@ no entitlement:
 3. macOS launches the main app, which is not sandboxed. The app reads the job,
    runs rclone, copies the link, and deletes the job file.
 
+A shared screenshot arrives as an in-memory item whose first offered type can be
+a class based one such as `NSImage`. Asking for a file representation of that
+yields an `NSKeyedArchiver` plist instead of image bytes, so the extension picks a
+type that carries data, prefers real image formats, and takes the file extension
+from the resolved `UTType`.
+
+The app is an accessory, so it shows no menu bar, yet it still installs a main
+menu. AppKit delivers editing shortcuts through it, and without one `⌘V` does
+nothing in a text view while right-click → Paste keeps working.
+
 Feedback uses `osascript` notifications and alerts, the same as the shell
 version. That avoids a notification permission prompt while the build is only
 ad-hoc signed.
+
+## Logs
+
+```bash
+tail -f ~/Library/Logs/RcloneShare.log
+```
+
+Lines also go to unified logging under the subsystem `com.senaev.rclone-share`,
+but `log show` and `log stream` refuse to open the local store without admin
+rights on some machines, hence the file. The sandboxed extension writes into its
+own container instead:
+
+```
+~/Library/Containers/com.senaev.rclone-share.shareext/Data/Library/Logs
+```

@@ -5,6 +5,7 @@ import AppKit
 final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private var statusItem: NSStatusItem?
+    private var gistWindow: GistWindowController?
     private let uploader = Uploader()
     private let uploadQueue = DispatchQueue(
         label: "com.senaev.rclone-share.upload",
@@ -12,13 +13,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     )
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        MainMenu.install()
         setUpStatusItem()
+        setUpGistHotkey()
     }
 
-    /// Entry point for `rclone-share://upload?job=…` sent by the extension.
+    /// Entry point for `rclone-share://upload?job=…` sent by the extension, and
+    /// for `rclone-share://gist`, which opens the gist form.
     func application(_ application: NSApplication, open urls: [URL]) {
         for url in urls {
-            handOff(url)
+            Log.app.info("Received \(url.absoluteString)")
+            if url.host == UploadJob.gistHost {
+                showGist()
+            } else {
+                handOff(url)
+            }
         }
     }
 
@@ -45,6 +54,28 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
+    private func upload(text: String, filename: String, to destination: Destination) {
+        uploadQueue.async { [uploader, weak self] in
+            do {
+                let result = try uploader.upload(
+                    text: text,
+                    filename: filename,
+                    to: destination
+                )
+                Self.report(result, destination: destination)
+            } catch {
+                // The form is shown again, otherwise the typed text is lost.
+                DispatchQueue.main.async {
+                    self?.gistWindow?.restore(
+                        text: text,
+                        filename: filename,
+                        error: error.localizedDescription
+                    )
+                }
+            }
+        }
+    }
+
     private func upload(_ paths: [URL], to destination: Destination) {
         uploadQueue.async { [uploader] in
             do {
@@ -67,6 +98,34 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         Notifier.notify("\(what) → \(destination.displayName). Link copied.")
     }
 
+    // MARK: - Gist
+
+    private func setUpGistHotkey() {
+        let registered = HotkeyCenter.shared.register(
+            keyCode: HotkeyCenter.gistKeyCode,
+            modifiers: HotkeyCenter.gistModifiers
+        ) { [weak self] in
+            self?.showGist()
+        }
+
+        if registered {
+            Log.app.info("Registered the gist hotkey")
+        } else {
+            // Another app owns the combination. The menu bar entry still works.
+            Notifier.notify("Could not claim ⌘⇧' — another app uses it.")
+        }
+    }
+
+    @objc private func showGist() {
+        Log.app.info("Opening the gist form")
+        if gistWindow == nil {
+            gistWindow = GistWindowController { [weak self] text, filename, destination in
+                self?.upload(text: text, filename: filename, to: destination)
+            }
+        }
+        gistWindow?.present()
+    }
+
     // MARK: - Menu bar
 
     private func setUpStatusItem() {
@@ -87,6 +146,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             entry.representedObject = destination.id
             menu.addItem(entry)
         }
+        menu.addItem(.separator())
+
+        let gist = NSMenuItem(
+            title: "New Gist…",
+            action: #selector(showGist),
+            keyEquivalent: "'"
+        )
+        gist.keyEquivalentModifierMask = [.command, .shift]
+        gist.target = self
+        menu.addItem(gist)
         menu.addItem(.separator())
 
         let quit = NSMenuItem(

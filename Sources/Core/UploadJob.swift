@@ -9,6 +9,9 @@ import Foundation
 struct UploadJob: Codable {
     static let urlScheme = "rclone-share"
     static let uploadHost = "upload"
+    /// `rclone-share://gist` opens the gist form. It carries no payload and
+    /// exists so the form can be opened by a script or another launcher.
+    static let gistHost = "gist"
     static let jobQueryItem = "job"
 
     let destinationID: String
