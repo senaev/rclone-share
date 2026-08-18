@@ -85,7 +85,7 @@ final class ShareViewController: NSViewController {
     // MARK: - Actions
 
     @objc private func cancel() {
-        let error = NSError(domain: UploadJob.urlScheme, code: 0, userInfo: nil)
+        let error = NSError(domain: AppURL.scheme, code: 0, userInfo: nil)
         extensionContext?.cancelRequest(withError: error)
     }
 

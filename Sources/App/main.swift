@@ -2,9 +2,10 @@ import AppKit
 
 /// Menu bar app. It owns every rclone call, because the Share Extension is
 /// sandboxed and cannot run a binary itself.
-final class AppDelegate: NSObject, NSApplicationDelegate {
+final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     private var statusItem: NSStatusItem?
+    private var loginItem: NSMenuItem?
     private var gistWindow: GistWindowController?
     private let uploader = Uploader()
     private let uploadQueue = DispatchQueue(
@@ -16,27 +17,40 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         MainMenu.install()
         setUpStatusItem()
         setUpGistHotkey()
+        Log.app.info("Login item status: \(LoginItem.describe(LoginItem.status))")
     }
 
-    /// Entry point for `rclone-share://upload?job=…` sent by the extension, and
-    /// for `rclone-share://gist`, which opens the gist form.
+    /// The checkmark is refreshed every time the menu opens, because the setting
+    /// can also be changed in System Settings.
+    func menuNeedsUpdate(_ menu: NSMenu) {
+        refreshLoginItem()
+    }
+
+    /// Entry point for every `rclone-share://` URL. The extension uses it to
+    /// hand over an upload, and scripts can reach the other actions.
     func application(_ application: NSApplication, open urls: [URL]) {
         for url in urls {
             Log.app.info("Received \(url.absoluteString)")
-            if url.host == UploadJob.gistHost {
+
+            switch AppURL.route(url) {
+            case .upload(let jobFile):
+                upload(jobFile: jobFile)
+            case .gist:
                 showGist()
-            } else {
-                handOff(url)
+            case .loginItem(let enable):
+                setLoginItem(enable)
+            case nil:
+                Log.app.error("Unsupported URL: \(url.absoluteString)")
             }
         }
     }
 
     // MARK: - Uploads
 
-    private func handOff(_ url: URL) {
+    private func upload(jobFile: URL) {
         uploadQueue.async { [uploader] in
             do {
-                let (job, jobFile) = try UploadJob.read(from: url)
+                let job = try UploadJob.read(from: jobFile)
                 defer { try? FileManager.default.removeItem(at: jobFile) }
 
                 guard let destination = Destination.named(job.destinationID) else {
@@ -158,6 +172,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         menu.addItem(gist)
         menu.addItem(.separator())
 
+        let login = NSMenuItem(
+            title: "Open at Login",
+            action: #selector(toggleLoginItem),
+            keyEquivalent: ""
+        )
+        login.target = self
+        menu.addItem(login)
+        loginItem = login
+        menu.addItem(.separator())
+
         let quit = NSMenuItem(
             title: "Quit RcloneShare",
             action: #selector(NSApplication.terminate(_:)),
@@ -165,8 +189,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         )
         menu.addItem(quit)
 
+        menu.delegate = self
         item.menu = menu
         statusItem = item
+    }
+
+    @objc private func toggleLoginItem() {
+        setLoginItem(!LoginItem.isEnabled)
+    }
+
+    private func setLoginItem(_ enable: Bool) {
+        if let problem = LoginItem.set(enable) {
+            Notifier.alert(problem)
+        }
+        refreshLoginItem()
+    }
+
+    private func refreshLoginItem() {
+        loginItem?.state = LoginItem.isEnabled ? .on : .off
     }
 
     @objc private func chooseFiles(_ sender: NSMenuItem) {

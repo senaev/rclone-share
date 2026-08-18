@@ -60,11 +60,18 @@ shortcut takes Command. If rclone fails, the form returns with the text intact.
 
 The shortcut uses Carbon's `RegisterEventHotKey`, which needs no Accessibility
 permission, unlike a global `NSEvent` monitor. When another app already owns the
-combination, the app says so and the menu bar entry still works. A script can
-open the same form:
+combination, the app says so and the menu bar entry still works.
+
+The hotkey works only while the app runs, so switch on **Open at Login** in the
+menu bar. That uses `SMAppService`, which works with ad-hoc signing.
+
+## URL actions
+
+Every action is reachable by script, which is also how they are tested:
 
 ```bash
 open "rclone-share://gist"
+open "rclone-share://login-item?enable=1"    # enable=0 to stop
 ```
 
 ## CLI
